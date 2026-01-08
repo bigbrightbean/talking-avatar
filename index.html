@@ -25,23 +25,29 @@ h1 { color: #ff6600; margin-bottom: 30px; }
 
 <script>
 const workerURL = "https://talking-avatar.bigbrightbean.workers.dev/";
+
 let talkBtn = document.getElementById("talkBtn");
 let recognizing = false;
 let mediaRecorder;
 let audioChunks = [];
 
 async function startRecording(){
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  mediaRecorder = new MediaRecorder(stream);
-  audioChunks = [];
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    audioChunks = [];
 
-  mediaRecorder.ondataavailable = e => {
-    if(e.data.size > 0) audioChunks.push(e.data);
-  };
+    mediaRecorder.ondataavailable = e => {
+      if(e.data.size > 0) audioChunks.push(e.data);
+    };
 
-  mediaRecorder.start();
-  talkBtn.classList.add("orange");
-  talkBtn.innerText = "🎤 Recording...";
+    mediaRecorder.start();
+    talkBtn.classList.add("orange");
+    talkBtn.innerText = "🎤 Recording...";
+  } catch(err) {
+    alert("Microphone access denied or not available.");
+    recognizing = false;
+  }
 }
 
 async function stopRecording(){
@@ -50,28 +56,36 @@ async function stopRecording(){
   talkBtn.innerText = "🎤 Talk";
 
   const audioBlob = await new Promise(resolve => {
-    mediaRecorder.onstop = () => resolve(new Blob(audioChunks, {type:'audio/webm'}));
+    mediaRecorder.onstop = () => resolve(new Blob(audioChunks, { type: 'audio/webm' }));
   });
 
-  document.getElementById("text").innerText = "Processing your speech...";
+  const reader = new FileReader();
+  reader.readAsDataURL(audioBlob);
+  reader.onloadend = async () => {
+    const audioBase64 = reader.result;
 
-  try{
-    const formData = new FormData();
-    formData.append("file", audioBlob, "speech.webm");
+    document.getElementById("text").innerText = "Processing your speech...";
 
-    const response = await fetch(workerURL, { method: "POST", body: formData });
-    const data = await response.json();
+    try {
+      const response = await fetch(workerURL, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ audioBase64 })
+      });
+      const data = await response.json();
 
-    document.getElementById("text").innerText = "Avatar says: " + data.reply;
+      document.getElementById("text").innerText = "Avatar says: " + data.reply;
 
-    const utter = new SpeechSynthesisUtterance(data.reply);
-    utter.rate = 0.9; utter.pitch = 1.1;
-    speechSynthesis.speak(utter);
+      const utter = new SpeechSynthesisUtterance(data.reply);
+      utter.rate = 0.9;
+      utter.pitch = 1.1;
+      speechSynthesis.speak(utter);
 
-  } catch(err){
-    console.error(err);
-    document.getElementById("text").innerText = "Error connecting to AI.";
-  }
+    } catch(err){
+      console.error(err);
+      document.getElementById("text").innerText = "Error connecting to AI.";
+    }
+  };
 }
 
 talkBtn.addEventListener("click", async ()=>{
