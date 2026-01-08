@@ -43,6 +43,7 @@ h1 { color: #ff6600; margin-bottom: 30px; }
 <script>
 const workerURL = "https://talking-avatar.bigbrightbean.workers.dev/";
 const talkBtn = document.getElementById("talkBtn");
+
 let recognizing = false;
 let finalTranscript = "";
 let recognition;
@@ -52,9 +53,10 @@ if(!SpeechRecognition){
   alert("Your browser does not support SpeechRecognition. Please use Chrome or Edge.");
 }
 
+// Initialize recognition
 recognition = new SpeechRecognition();
 recognition.lang = "en-US";
-recognition.continuous = true; // Keep listening
+recognition.continuous = true; // keep listening
 recognition.interimResults = true;
 
 recognition.onresult = function(event){
@@ -69,17 +71,17 @@ recognition.onresult = function(event){
   document.getElementById("text").innerText = "You are speaking: " + finalTranscript + interimTranscript;
 };
 
-recognition.onerror = function(event){
-  console.error(event.error);
-  alert("Microphone error: " + event.error);
-  toggleRecording(false);
-};
-
-// --- key fix: auto-restart recognition on end ---
+// Automatically restart if stopped unexpectedly
 recognition.onend = function(){
   if(recognizing){
     recognition.start();
   }
+};
+
+recognition.onerror = function(event){
+  console.error(event.error);
+  alert("Microphone error: " + event.error);
+  toggleRecording(false);
 };
 
 function toggleRecording(start){
@@ -97,6 +99,7 @@ function toggleRecording(start){
   }
 }
 
+// Click to toggle recording
 talkBtn.addEventListener("click", async ()=>{
   if(!recognizing){
     toggleRecording(true);
