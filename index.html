@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <title>Talking Avatar</title>
 <style>
-/* --- Page layout --- */
 body {
   font-family: 'Comic Sans MS', Arial, sans-serif;
   text-align: center;
@@ -15,15 +14,14 @@ h1 { color: #ff6600; margin-bottom: 30px; }
 #avatar { width: 200px; margin-bottom: 20px; }
 #text { font-size: 18px; margin-top: 20px; min-height: 60px; }
 
-/* --- 3D bubble-style Talk button --- */
 #talkBtn {
   font-size: 20px;
   padding: 20px 30px;
   border: none;
-  border-radius: 50px; /* bubble shape */
+  border-radius: 50px;
   cursor: pointer;
   color: white;
-  background: #4CAF50; /* default green */
+  background: #4CAF50;
   box-shadow: 0 8px #666;
   transition: all 0.15s;
 }
@@ -31,9 +29,7 @@ h1 { color: #ff6600; margin-bottom: 30px; }
   box-shadow: 0 4px #444;
   transform: translateY(4px);
 }
-#talkBtn.orange {
-  background: #FF9933; /* recording */
-}
+#talkBtn.orange { background: #FF9933; }
 </style>
 </head>
 <body>
@@ -42,39 +38,86 @@ h1 { color: #ff6600; margin-bottom: 30px; }
 <img id="avatar" src="https://i.imgur.com/1X6R7Yx.png" alt="Avatar">
 
 <button id="talkBtn">🎤 Talk</button>
-
 <div id="text"></div>
 
 <script>
-// --- Cloudflare Worker URL ---
-const workerURL = "https://talking-avatar.bigbrightbean.workers.dev/"; // <--- keep this
-
+const workerURL = "https://talking-avatar.bigbrightbean.workers.dev/";
 const talkBtn = document.getElementById("talkBtn");
+let recognizing = false;
+let finalTranscript = "";
+let recognition;
 
-talkBtn.addEventListener("click", () => {
-  // change button to recording
-  talkBtn.classList.add("orange");
-  talkBtn.innerText = "🎤 Listening...";
+// Detect SpeechRecognition
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if(!SpeechRecognition){
+  alert("Your browser does not support SpeechRecognition. Please use Chrome or Edge.");
+}
 
-  // create new recognition each click
-  const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-  recognition.lang = "en-US";
+// Initialize recognition once
+recognition = new SpeechRecognition();
+recognition.lang = "en-US";
+recognition.continuous = true; // Keep listening until user toggles off
+recognition.interimResults = true;
 
-  recognition.onresult = async function(event){
-    const studentText = event.results[0][0].transcript;
-    document.getElementById("text").innerText = "You said: " + studentText + "\nThinking...";
+recognition.onresult = function(event){
+  let interimTranscript = "";
+  for (let i = event.resultIndex; i < event.results.length; i++){
+    if(event.results[i].isFinal){
+      finalTranscript += event.results[i][0].transcript + " ";
+    } else {
+      interimTranscript += event.results[i][0].transcript;
+    }
+  }
+  document.getElementById("text").innerText = "You are speaking: " + finalTranscript + interimTranscript;
+};
 
-    try {
-      const response = await fetch(workerURL, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({text: studentText})
+recognition.onerror = function(event){
+  console.error(event.error);
+  alert("Microphone error: " + event.error);
+  toggleRecording(false);
+};
+
+recognition.onend = function(){
+  // Do nothing; we manually stop when toggle clicked
+};
+
+function toggleRecording(start){
+  if(start){
+    recognizing = true;
+    finalTranscript = "";
+    talkBtn.classList.add("orange");
+    talkBtn.innerText = "🎤 Recording...";
+    recognition.start();
+  } else {
+    recognizing = false;
+    talkBtn.classList.remove("orange");
+    talkBtn.innerText = "🎤 Talk";
+    recognition.stop();
+  }
+}
+
+// Click to toggle
+talkBtn.addEventListener("click", async ()=>{
+  if(!recognizing){
+    toggleRecording(true);
+  } else {
+    toggleRecording(false);
+    // Send full transcript to AI
+    if(finalTranscript.trim().length === 0){
+      document.getElementById("text").innerText = "You did not say anything!";
+      return;
+    }
+    document.getElementById("text").innerText = "You said: " + finalTranscript + "\nThinking...";
+
+    try{
+      const response = await fetch(workerURL,{
+        method:"POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({text: finalTranscript})
       });
-
       const data = await response.json();
       document.getElementById("text").innerText = "Avatar says: " + data.reply;
 
-      // speak the AI reply
       const utter = new SpeechSynthesisUtterance(data.reply);
       utter.rate = 0.9;
       utter.pitch = 1.1;
@@ -84,20 +127,7 @@ talkBtn.addEventListener("click", () => {
       console.error(err);
       document.getElementById("text").innerText = "Error connecting to AI.";
     }
-  };
-
-  recognition.onend = () => {
-    talkBtn.classList.remove("orange");
-    talkBtn.innerText = "🎤 Talk";
-  };
-
-  recognition.onerror = () => {
-    talkBtn.classList.remove("orange");
-    talkBtn.innerText = "🎤 Talk";
-    alert("Microphone error. Try again.");
-  };
-
-  recognition.start();
+  }
 });
 </script>
 
