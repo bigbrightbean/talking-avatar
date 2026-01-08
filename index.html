@@ -4,71 +4,125 @@
 <meta charset="UTF-8" />
 <title>Talking Avatar</title>
 <style>
-body { font-family: 'Comic Sans MS', Arial; text-align: center; background:#f0f8ff; padding:40px;}
-h1{color:#ff6600;}
-#avatar{width:200px; margin-bottom:20px;}
-#text{font-size:18px; margin-top:20px; min-height:60px;}
-.btn{font-size:18px; padding:15px 25px; margin:10px; border:none; border-radius:12px; cursor:pointer; color:white; font-weight:bold; box-shadow:0 5px #999; transition:all 0.1s;}
-.btn:active{box-shadow:0 2px #666; transform:translateY(3px);}
-#talkBtn.green{background:#4CAF50;}
-#talkBtn.orange{background:#FF9933;}
-#micBtn.green{background:#4CAF50;}
-#micBtn.orange{background:#FF9933;}
+/* --- Page layout --- */
+body {
+  font-family: 'Comic Sans MS', Arial, sans-serif;
+  text-align: center;
+  background: #f0f8ff;
+  padding: 40px;
+}
+
+h1 {
+  color: #ff6600;
+  margin-bottom: 30px;
+}
+
+#avatar {
+  width: 200px;
+  margin-bottom: 20px;
+}
+
+#text {
+  font-size: 18px;
+  margin-top: 20px;
+  min-height: 60px;
+}
+
+/* --- Bubble/3D button style --- */
+#talkBtn {
+  font-size: 20px;
+  padding: 20px 30px;
+  border: none;
+  border-radius: 50px; /* bubble shape */
+  cursor: pointer;
+  color: white;
+  font-weight: bold;
+  box-shadow: 0 8px #666;
+  transition: all 0.15s;
+}
+
+#talkBtn:active {
+  box-shadow: 0 4px #444;
+  transform: translateY(4px);
+}
+
+/* --- Button colors --- */
+.green { background: #4CAF50; }   /* default ready */
+.orange { background: #FF9933; }  /* recording */
 </style>
 </head>
 <body>
 
 <h1>Talk to Me!</h1>
 <img id="avatar" src="https://i.imgur.com/1X6R7Yx.png" alt="Avatar" />
+
 <div>
-  <button id="talkBtn" class="btn green">🎤 Talk</button>
-  <button id="micBtn" class="btn green">Mic On</button>
+  <button id="talkBtn" class="green">🎤 Talk</button>
 </div>
+
 <div id="text"></div>
 
 <script>
-const workerURL = "YOUR_WORKER_URL";
-let micEnabled = true;
+// --- Cloudflare Worker URL ---
+const workerURL = "https://talking-avatar.bigbrightbean.workers.dev/"; // replace with your deployed Worker URL
+
+// --- State variable ---
+let recording = false;
 let recognition = null;
 
-const micBtn = document.getElementById("micBtn");
-micBtn.addEventListener("click",()=>{
-  micEnabled=!micEnabled;
-  micBtn.innerText = micEnabled?"Mic On":"Mic Off";
-  micBtn.className = micEnabled?"btn green":"btn orange";
-});
-
 const talkBtn = document.getElementById("talkBtn");
-talkBtn.addEventListener("click",()=>{
-  if(!micEnabled){alert("Microphone is turned off!"); return;}
-  talkBtn.className="btn orange";
+
+talkBtn.addEventListener("click", () => {
+  if (recording) {
+    // already recording, ignore clicks
+    return;
+  }
+
+  recording = true;
+  talkBtn.className = "orange"; // recording color
+  talkBtn.innerText = "🎤 Listening...";
 
   recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-  recognition.lang="en-US";
+  recognition.lang = "en-US";
 
-  recognition.onresult=async function(event){
-    const studentText=event.results[0][0].transcript;
-    document.getElementById("text").innerText="You said: "+studentText+"\nThinking...";
+  recognition.onresult = async function(event) {
+    const studentText = event.results[0][0].transcript;
+    document.getElementById("text").innerText = "You said: " + studentText + "\nThinking...";
 
-    try{
-      const response=await fetch(workerURL,{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({text:studentText})
+    try {
+      const response = await fetch(workerURL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: studentText })
       });
-      const data=await response.json();
-      document.getElementById("text").innerText="Avatar says: "+data.reply;
-      const utter=new SpeechSynthesisUtterance(data.reply);
-      utter.rate=0.9; utter.pitch=1.1;
+
+      const data = await response.json();
+      document.getElementById("text").innerText = "Avatar says: " + data.reply;
+
+      const utter = new SpeechSynthesisUtterance(data.reply);
+      utter.rate = 0.9;
+      utter.pitch = 1.1;
       speechSynthesis.speak(utter);
-    }catch(err){
+
+    } catch (err) {
       console.error(err);
-      document.getElementById("text").innerText="Error connecting to AI.";
+      document.getElementById("text").innerText = "Error connecting to AI.";
     }
   };
 
-  recognition.onend=()=>{talkBtn.className="btn green";}
-  recognition.onerror=()=>{talkBtn.className="btn green"; alert("Microphone error. Try again.");};
+  recognition.onend = () => {
+    recording = false;
+    talkBtn.className = "green";
+    talkBtn.innerText = "🎤 Talk";
+  };
+
+  recognition.onerror = () => {
+    recording = false;
+    talkBtn.className = "green";
+    talkBtn.innerText = "🎤 Talk";
+    alert("Microphone error. Try again.");
+  };
+
   recognition.start();
 });
 </script>
