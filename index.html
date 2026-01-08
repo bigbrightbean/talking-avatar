@@ -47,16 +47,14 @@ let recognizing = false;
 let finalTranscript = "";
 let recognition;
 
-// Detect SpeechRecognition
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 if(!SpeechRecognition){
   alert("Your browser does not support SpeechRecognition. Please use Chrome or Edge.");
 }
 
-// Initialize recognition once
 recognition = new SpeechRecognition();
 recognition.lang = "en-US";
-recognition.continuous = true; // Keep listening until user toggles off
+recognition.continuous = true; // Keep listening
 recognition.interimResults = true;
 
 recognition.onresult = function(event){
@@ -77,8 +75,11 @@ recognition.onerror = function(event){
   toggleRecording(false);
 };
 
+// --- key fix: auto-restart recognition on end ---
 recognition.onend = function(){
-  // Do nothing; we manually stop when toggle clicked
+  if(recognizing){
+    recognition.start();
+  }
 };
 
 function toggleRecording(start){
@@ -92,21 +93,21 @@ function toggleRecording(start){
     recognizing = false;
     talkBtn.classList.remove("orange");
     talkBtn.innerText = "🎤 Talk";
-    recognition.stop();
+    recognition.stop(); // stop permanently
   }
 }
 
-// Click to toggle
 talkBtn.addEventListener("click", async ()=>{
   if(!recognizing){
     toggleRecording(true);
   } else {
     toggleRecording(false);
-    // Send full transcript to AI
+
     if(finalTranscript.trim().length === 0){
       document.getElementById("text").innerText = "You did not say anything!";
       return;
     }
+
     document.getElementById("text").innerText = "You said: " + finalTranscript + "\nThinking...";
 
     try{
