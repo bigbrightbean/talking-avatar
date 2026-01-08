@@ -26,75 +26,88 @@ h1 { color: #ff6600; margin-bottom: 30px; }
 <script>
 const workerURL = "https://talking-avatar.bigbrightbean.workers.dev/";
 
-let talkBtn = document.getElementById("talkBtn");
+const talkBtn = document.getElementById("talkBtn");
+const textDiv = document.getElementById("text");
 let recognizing = false;
-let mediaRecorder;
-let audioChunks = [];
+let recognition;
 
-async function startRecording(){
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream);
-    audioChunks = [];
+// cross-browser
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-    mediaRecorder.ondataavailable = e => {
-      if(e.data.size > 0) audioChunks.push(e.data);
-    };
+function startRecognition(){
+  recognition = new SpeechRecognition();
+  recognition.lang = "en-US";
+  recognition.interimResults = false;
+  recognition.continuous = true; // allows long recording
 
-    mediaRecorder.start();
-    talkBtn.classList.add("orange");
-    talkBtn.innerText = "🎤 Recording...";
-  } catch(err) {
-    alert("Microphone access denied or not available.");
-    recognizing = false;
+  recognition.onresult = event => {
+    let transcript = "";
+    for (let i = 0; i < event.results.length; i++) {
+      transcript += event.results[i][0].transcript;
+    }
+    textDiv.innerText = "You said: " + transcript;
+  };
+
+  recognition.onerror = event => {
+    console.error(event);
+    alert("Microphone error. Please try again.");
+    stopRecognition();
+  };
+
+  recognition.start();
+}
+
+function stopRecognition(){
+  if(recognition){
+    recognition.stop();
+    recognition = null;
   }
 }
 
-async function stopRecording(){
-  mediaRecorder.stop();
-  talkBtn.classList.remove("orange");
-  talkBtn.innerText = "🎤 Talk";
+async function sendToAI(text){
+  textDiv.innerText = "Thinking...";
+  try {
+    const resp = await fetch(workerURL, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ text })
+    });
+    const data = await resp.json();
+    textDiv.innerText = "Avatar says: " + data.reply;
 
-  const audioBlob = await new Promise(resolve => {
-    mediaRecorder.onstop = () => resolve(new Blob(audioChunks, { type: 'audio/webm' }));
-  });
+    const utter = new SpeechSynthesisUtterance(data.reply);
+    utter.rate = 0.9;
+    utter.pitch = 1.1;
+    speechSynthesis.speak(utter);
 
-  const reader = new FileReader();
-  reader.readAsDataURL(audioBlob);
-  reader.onloadend = async () => {
-    const audioBase64 = reader.result;
-
-    document.getElementById("text").innerText = "Processing your speech...";
-
-    try {
-      const response = await fetch(workerURL, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ audioBase64 })
-      });
-      const data = await response.json();
-
-      document.getElementById("text").innerText = "Avatar says: " + data.reply;
-
-      const utter = new SpeechSynthesisUtterance(data.reply);
-      utter.rate = 0.9;
-      utter.pitch = 1.1;
-      speechSynthesis.speak(utter);
-
-    } catch(err){
-      console.error(err);
-      document.getElementById("text").innerText = "Error connecting to AI.";
-    }
-  };
+  } catch(err){
+    console.error(err);
+    textDiv.innerText = "Error contacting AI.";
+  }
 }
 
-talkBtn.addEventListener("click", async ()=>{
+// toggle button
+talkBtn.addEventListener("click", ()=>{
   if(!recognizing){
     recognizing = true;
-    await startRecording();
+    talkBtn.classList.add("orange");
+    talkBtn.innerText = "🎤 Listening...";
+    startRecognition();
   } else {
     recognizing = false;
-    await stopRecording();
+    talkBtn.classList.remove("orange");
+    talkBtn.innerText = "🎤 Talk";
+    if(recognition){
+      recognition.onresult = async event => {
+        let transcript = "";
+        for (let i = 0; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        textDiv.innerText = "You said: " + transcript;
+        await sendToAI(transcript);
+      };
+      stopRecognition();
+    }
   }
 });
 </script>
