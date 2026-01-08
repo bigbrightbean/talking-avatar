@@ -1,88 +1,64 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8" />
+<meta charset="UTF-8">
 <title>Talking Avatar</title>
 <style>
-/* --- Page layout --- */
-body {
-  font-family: 'Comic Sans MS', Arial, sans-serif;
-  text-align: center;
-  background: #f0f8ff;
-  padding: 40px;
-}
-
-h1 {
-  color: #ff6600;
-  margin-bottom: 30px;
-}
-
-#avatar {
-  width: 200px;
-  margin-bottom: 20px;
-}
-
-#text {
-  font-size: 18px;
-  margin-top: 20px;
-  min-height: 60px;
-}
-
-/* --- Bubble/3D button style --- */
-#talkBtn {
-  font-size: 20px;
-  padding: 20px 30px;
-  border: none;
-  border-radius: 50px; /* bubble shape */
-  cursor: pointer;
-  color: white;
-  font-weight: bold;
-  box-shadow: 0 8px #666;
-  transition: all 0.15s;
-}
-
-#talkBtn:active {
-  box-shadow: 0 4px #444;
-  transform: translateY(4px);
-}
-
-/* --- Button colors --- */
-.green { background: #4CAF50; }   /* default ready */
-.orange { background: #FF9933; }  /* recording */
+  body {
+    font-family: 'Comic Sans MS', Arial, sans-serif;
+    text-align: center;
+    background: #f0f8ff;
+    padding: 40px;
+  }
+  h1 {
+    color: #ff6600;
+    margin-bottom: 30px;
+  }
+  #avatar {
+    width: 200px;
+    margin-bottom: 20px;
+  }
+  #text {
+    font-size: 18px;
+    margin-top: 20px;
+    min-height: 60px;
+  }
+  #talkBtn {
+    font-size: 20px;
+    padding: 20px 30px;
+    border: none;
+    border-radius: 50px;
+    cursor: pointer;
+    color: white;
+    background: #4CAF50;
+    box-shadow: 0 8px #666;
+    transition: all 0.15s;
+  }
+  #talkBtn:active {
+    box-shadow: 0 4px #444;
+    transform: translateY(4px);
+  }
 </style>
 </head>
 <body>
 
 <h1>Talk to Me!</h1>
-<img id="avatar" src="https://i.imgur.com/1X6R7Yx.png" alt="Avatar" />
+<img id="avatar" src="https://i.imgur.com/1X6R7Yx.png" alt="Avatar">
 
-<div>
-  <button id="talkBtn" class="green">🎤 Talk</button>
-</div>
+<button id="talkBtn">🎤 Talk</button>
 
 <div id="text"></div>
 
 <script>
-// --- Cloudflare Worker URL ---
-const workerURL = "https://talking-avatar.bigbrightbean.workers.dev/"; // replace with your deployed Worker URL
-
-// --- State variable ---
-let recording = false;
-let recognition = null;
+const workerURL = "https://talking-avatar.bigbrightbean.workers.dev/";
 
 const talkBtn = document.getElementById("talkBtn");
 
 talkBtn.addEventListener("click", () => {
-  if (recording) {
-    // already recording, ignore clicks
-    return;
-  }
-
-  recording = true;
-  talkBtn.className = "orange"; // recording color
+  talkBtn.style.background = "#FF9933"; // orange while listening
   talkBtn.innerText = "🎤 Listening...";
 
-  recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+  const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
   recognition.lang = "en-US";
 
   recognition.onresult = async function(event) {
@@ -111,14 +87,12 @@ talkBtn.addEventListener("click", () => {
   };
 
   recognition.onend = () => {
-    recording = false;
-    talkBtn.className = "green";
+    talkBtn.style.background = "#4CAF50"; // back to green
     talkBtn.innerText = "🎤 Talk";
   };
 
   recognition.onerror = () => {
-    recording = false;
-    talkBtn.className = "green";
+    talkBtn.style.background = "#4CAF50";
     talkBtn.innerText = "🎤 Talk";
     alert("Microphone error. Try again.");
   };
