@@ -1,174 +1,110 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Talking Avatar</title>
-<style>
-/* --- Page layout --- */
-body {
-  font-family: 'Comic Sans MS', Arial, sans-serif;
-  text-align: center;
-  background: #f0f8ff;
-  padding: 40px;
-}
-h1 { color: #ff6600; margin-bottom: 30px; }
-#avatar { width: 200px; margin-bottom: 20px; }
-#text { font-size: 18px; margin-top: 20px; min-height: 60px; }
+  <meta charset="UTF-8" />
+  <title>Talking Teacher Avatar</title>
 
-/* --- 3D bubble-style Talk button --- */
-#talkBtn {
-  font-size: 20px;
-  padding: 20px 30px;
-  border: none;
-  border-radius: 50px; /* bubble shape */
-  cursor: pointer;
-  color: white;
-  background: #4CAF50; /* default green */
-  box-shadow: 0 8px #666;
-  transition: all 0.15s;
-}
-#talkBtn:active {
-  box-shadow: 0 4px #444;
-  transform: translateY(4px);
-}
-#talkBtn.orange {
-  background: #FF9933; /* recording */
-}
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f7fb;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 40px;
+    }
 
-/* --- Avatar talking animation --- */
-@keyframes talking {
-  0% { transform: translateY(0px) scale(1); }
-  25% { transform: translateY(-4px) scale(1.02); }
-  50% { transform: translateY(0px) scale(1); }
-  75% { transform: translateY(4px) scale(1.02); }
-  100% { transform: translateY(0px) scale(1); }
-}
+    /* Avatar frame */
+    .avatar-wrapper {
+      width: 280px;
+      height: 360px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
 
-.talking {
-  animation: talking 0.5s infinite;
-}
-</style>
+    /* Avatar image */
+    #avatar {
+      width: 100%;
+      height: auto;
+      transition: transform 0.15s ease;
+    }
+
+    /* Bounce animation while talking */
+    .talking {
+      animation: bounce 0.4s infinite alternate;
+    }
+
+    @keyframes bounce {
+      from { transform: translateY(0); }
+      to   { transform: translateY(-6px); }
+    }
+
+    button {
+      margin-top: 20px;
+      padding: 12px 24px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+  </style>
 </head>
+
 <body>
 
-<h1>Talk to Me!</h1>
-<img id="avatar" src="images/teacher-avatar.png" alt="Avatar">
-<button id="talkBtn">🎤 Talk</button>
-<div id="text"></div>
+  <div class="avatar-wrapper">
+    <img
+      id="avatar"
+      src="images/teacher-mouth1.png"
+      alt="Teacher Avatar"
+    />
+  </div>
 
-<script>
-// --- Cloudflare Worker URL ---
-const workerURL = "https://talking-avatar.bigbrightbean.workers.dev/"; 
+  <button onclick="speak()">Speak</button>
 
-const talkBtn = document.getElementById("talkBtn");
-const textDiv = document.getElementById("text");
-const avatarImg = document.getElementById("avatar");
+  <script>
+    const avatar = document.getElementById("avatar");
 
-let recognizing = false;
-let transcripts = []; // store batch transcripts
-let recognition;
+    const mouths = [
+      "images/teacher-mouth1.png", // closed
+      "images/teacher-mouth2.png", // slightly open
+      "images/teacher-mouth3.png"  // open
+    ];
 
-// cross-browser SpeechRecognition
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let mouthTimer = null;
 
-// --- start a new batch ---
-function startRecognitionBatch() {
-  recognition = new SpeechRecognition();
-  recognition.lang = "en-US";
-  recognition.continuous = true;
-  recognition.interimResults = false;
+    function startTalkingAnimation() {
+      let i = 0;
+      avatar.classList.add("talking");
 
-  recognition.onresult = event => {
-    let transcript = "";
-    for (let i = 0; i < event.results.length; i++) {
-      transcript += event.results[i][0].transcript;
+      mouthTimer = setInterval(() => {
+        avatar.src = mouths[i % mouths.length];
+        i++;
+      }, 180);
     }
-    transcripts.push(transcript);
-    textDiv.innerText = "You said: " + transcripts.join(" ");
-  };
 
-  recognition.onerror = event => {
-    console.error(event);
-    alert("Microphone error. Try again.");
-    stopRecognition();
-  };
-
-  recognition.onend = () => {
-    if (recognizing) {
-      // restart automatically for next batch
-      recognition.start();
+    function stopTalkingAnimation() {
+      clearInterval(mouthTimer);
+      avatar.classList.remove("talking");
+      avatar.src = mouths[0]; // closed mouth
     }
-  };
 
-  recognition.start();
-}
+    function speak() {
+      const text = "Hello kids! I am your friendly teacher. Let's learn together!";
 
-// --- stop recording ---
-function stopRecognition() {
-  if (recognition) {
-    recognition.stop();
-    recognition = null;
-  }
-}
+      const utterance = new SpeechSynthesisUtterance(text);
 
-// --- send combined text to AI ---
-async function sendToAI() {
-  const finalText = transcripts.join(" ").trim();
-  if (!finalText) {
-    textDiv.innerText = "No speech detected.";
-    return;
-  }
+      utterance.onstart = () => {
+        startTalkingAnimation();
+      };
 
-  textDiv.innerText = "Thinking...";
-  avatarImg.classList.add("talking"); // start avatar animation
+      utterance.onend = () => {
+        stopTalkingAnimation();
+      };
 
-  try {
-    const resp = await fetch(workerURL, {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({ text: finalText })
-    });
-
-    const data = await resp.json();
-    textDiv.innerText = "Avatar says: " + data.reply;
-
-    const utter = new SpeechSynthesisUtterance(data.reply);
-    utter.rate = 0.9;
-    utter.pitch = 1.1;
-
-    // stop avatar animation when speech ends
-    utter.onend = () => {
-      avatarImg.classList.remove("talking");
-    };
-
-    speechSynthesis.speak(utter);
-
-  } catch(err){
-    console.error(err);
-    textDiv.innerText = "Error contacting AI.";
-    avatarImg.classList.remove("talking");
-  }
-}
-
-// --- Talk button toggle ---
-talkBtn.addEventListener("click", () => {
-  if (!recognizing) {
-    // start recording
-    recognizing = true;
-    transcripts = []; // clear previous
-    talkBtn.classList.add("orange");
-    talkBtn.innerText = "🎤 Listening...";
-    startRecognitionBatch();
-  } else {
-    // stop recording
-    recognizing = false;
-    talkBtn.classList.remove("orange");
-    talkBtn.innerText = "🎤 Talk";
-    stopRecognition();
-    sendToAI(); // send final text to AI
-  }
-});
-</script>
+      speechSynthesis.cancel(); // prevent overlap
+      speechSynthesis.speak(utterance);
+    }
+  </script>
 
 </body>
 </html>
