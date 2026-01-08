@@ -13,7 +13,6 @@ body {
 h1 { color: #ff6600; margin-bottom: 30px; }
 #avatar { width: 200px; margin-bottom: 20px; }
 #text { font-size: 18px; margin-top: 20px; min-height: 60px; }
-
 #talkBtn {
   font-size: 20px;
   padding: 20px 30px;
@@ -36,101 +35,92 @@ h1 { color: #ff6600; margin-bottom: 30px; }
 
 <h1>Talk to Me!</h1>
 <img id="avatar" src="https://i.imgur.com/1X6R7Yx.png" alt="Avatar">
-
 <button id="talkBtn">🎤 Talk</button>
 <div id="text"></div>
 
 <script>
 const workerURL = "https://talking-avatar.bigbrightbean.workers.dev/";
-const talkBtn = document.getElementById("talkBtn");
 
+let talkBtn = document.getElementById("talkBtn");
 let recognizing = false;
-let finalTranscript = "";
-let recognition;
+let mediaRecorder;
+let audioChunks = [];
 
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-if(!SpeechRecognition){
-  alert("Your browser does not support SpeechRecognition. Please use Chrome or Edge.");
+async function startRecording(){
+  // ask for mic permission
+  const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+  mediaRecorder = new MediaRecorder(stream);
+  audioChunks = [];
+
+  mediaRecorder.ondataavailable = event => {
+    if(event.data.size > 0) audioChunks.push(event.data);
+  };
+
+  mediaRecorder.start();
+  talkBtn.classList.add("orange");
+  talkBtn.innerText = "🎤 Recording...";
 }
 
-// Initialize recognition
-recognition = new SpeechRecognition();
-recognition.lang = "en-US";
-recognition.continuous = true; // keep listening
-recognition.interimResults = true;
+async function stopRecording(){
+  mediaRecorder.stop();
+  talkBtn.classList.remove("orange");
+  talkBtn.innerText = "🎤 Talk";
 
-recognition.onresult = function(event){
-  let interimTranscript = "";
-  for (let i = event.resultIndex; i < event.results.length; i++){
-    if(event.results[i].isFinal){
-      finalTranscript += event.results[i][0].transcript + " ";
-    } else {
-      interimTranscript += event.results[i][0].transcript;
-    }
-  }
-  document.getElementById("text").innerText = "You are speaking: " + finalTranscript + interimTranscript;
-};
+  // wait for all chunks
+  const audioBlob = await new Promise(resolve => {
+    mediaRecorder.onstop = () => resolve(new Blob(audioChunks, {type: 'audio/webm'}));
+  });
 
-// Automatically restart if stopped unexpectedly
-recognition.onend = function(){
-  if(recognizing){
-    recognition.start();
-  }
-};
+  document.getElementById("text").innerText = "Processing your speech...";
 
-recognition.onerror = function(event){
-  console.error(event.error);
-  alert("Microphone error: " + event.error);
-  toggleRecording(false);
-};
+  try{
+    // Send audio to OpenAI Whisper API
+    const formData = new FormData();
+    formData.append("file", audioBlob, "speech.webm");
+    formData.append("model", "whisper-1");
 
-function toggleRecording(start){
-  if(start){
-    recognizing = true;
-    finalTranscript = "";
-    talkBtn.classList.add("orange");
-    talkBtn.innerText = "🎤 Recording...";
-    recognition.start();
-  } else {
-    recognizing = false;
-    talkBtn.classList.remove("orange");
-    talkBtn.innerText = "🎤 Talk";
-    recognition.stop(); // stop permanently
+    const whisperResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer YOUR_OPENAI_API_KEY"
+      },
+      body: formData
+    });
+
+    const whisperData = await whisperResponse.json();
+    const transcript = whisperData.text;
+
+    document.getElementById("text").innerText = "You said: " + transcript + "\nThinking...";
+
+    // Send transcript to your worker (ChatGPT)
+    const response = await fetch(workerURL, {
+      method:"POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({text: transcript})
+    });
+    const data = await response.json();
+
+    document.getElementById("text").innerText = "Avatar says: " + data.reply;
+
+    const utter = new SpeechSynthesisUtterance(data.reply);
+    utter.rate = 0.9;
+    utter.pitch = 1.1;
+    speechSynthesis.speak(utter);
+
+  } catch(err){
+    console.error(err);
+    document.getElementById("text").innerText = "Error connecting to AI.";
   }
 }
 
-// Click to toggle recording
+// Toggle button
 talkBtn.addEventListener("click", async ()=>{
   if(!recognizing){
-    toggleRecording(true);
+    recognizing = true;
+    await startRecording();
   } else {
-    toggleRecording(false);
-
-    if(finalTranscript.trim().length === 0){
-      document.getElementById("text").innerText = "You did not say anything!";
-      return;
-    }
-
-    document.getElementById("text").innerText = "You said: " + finalTranscript + "\nThinking...";
-
-    try{
-      const response = await fetch(workerURL,{
-        method:"POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({text: finalTranscript})
-      });
-      const data = await response.json();
-      document.getElementById("text").innerText = "Avatar says: " + data.reply;
-
-      const utter = new SpeechSynthesisUtterance(data.reply);
-      utter.rate = 0.9;
-      utter.pitch = 1.1;
-      speechSynthesis.speak(utter);
-
-    } catch(err){
-      console.error(err);
-      document.getElementById("text").innerText = "Error connecting to AI.";
-    }
+    recognizing = false;
+    await stopRecording();
   }
 });
 </script>
