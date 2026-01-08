@@ -19,15 +19,6 @@ h1 { color: #ff6600; margin-bottom: 30px; }
   margin-bottom: 20px;
 }
 
-.talking {
-  animation: bounce 0.35s infinite alternate;
-}
-
-@keyframes bounce {
-  from { transform: translateY(0); }
-  to { transform: translateY(-6px); }
-}
-
 #text {
   font-size: 18px;
   margin-top: 20px;
@@ -73,28 +64,26 @@ const textDiv = document.getElementById("text");
 const avatar = document.getElementById("avatar");
 
 /* =====================
-   Avatar talking logic
+   Mouth animation only
 ===================== */
 const mouthFrames = [
-  "images/teacher-mouth1.png",
-  "images/teacher-mouth2.png",
-  "images/teacher-mouth3.png"
+  "images/teacher-mouth1.png", // closed
+  "images/teacher-mouth2.png", // slightly open
+  "images/teacher-mouth3.png"  // open
 ];
 
 let mouthTimer = null;
 
 function startAvatarTalking() {
   let i = 0;
-  avatar.classList.add("talking");
   mouthTimer = setInterval(() => {
     avatar.src = mouthFrames[i % mouthFrames.length];
     i++;
-  }, 150);
+  }, 160);
 }
 
 function stopAvatarTalking() {
   clearInterval(mouthTimer);
-  avatar.classList.remove("talking");
   avatar.src = mouthFrames[0];
 }
 
