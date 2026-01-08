@@ -12,7 +12,10 @@ body {
   padding: 40px;
 }
 
-h1 { color: #ff6600; margin-bottom: 30px; }
+h1 {
+  color: #ff6600;
+  margin-bottom: 30px;
+}
 
 #avatar {
   width: 220px;
@@ -54,7 +57,10 @@ h1 { color: #ff6600; margin-bottom: 30px; }
 
 <img id="avatar" src="images/teacher-mouth1.png" alt="Avatar">
 
+<br>
+
 <button id="talkBtn">🎤 Talk</button>
+
 <div id="text"></div>
 
 <script>
@@ -63,39 +69,12 @@ const talkBtn = document.getElementById("talkBtn");
 const textDiv = document.getElementById("text");
 const avatar = document.getElementById("avatar");
 
-/* =====================
-   Mouth animation only
-===================== */
-const mouthFrames = [
-  "images/teacher-mouth1.png", // closed
-  "images/teacher-mouth2.png", // slightly open
-  "images/teacher-mouth3.png"  // open
-];
-
-let mouthTimer = null;
-
-function startAvatarTalking() {
-  let i = 0;
-  mouthTimer = setInterval(() => {
-    avatar.src = mouthFrames[i % mouthFrames.length];
-    i++;
-  }, 160);
-}
-
-function stopAvatarTalking() {
-  clearInterval(mouthTimer);
-  avatar.src = mouthFrames[0];
-}
-
-/* =====================
-   Speech recognition
-===================== */
 let recognizing = false;
 let transcripts = [];
 let recognition;
 
-const SpeechRecognition =
-  window.SpeechRecognition || window.webkitSpeechRecognition;
+// ---------- Speech Recognition ----------
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 function startRecognitionBatch() {
   recognition = new SpeechRecognition();
@@ -104,18 +83,15 @@ function startRecognitionBatch() {
   recognition.interimResults = false;
 
   recognition.onresult = event => {
-    let transcript = "";
+    let text = "";
     for (let i = 0; i < event.results.length; i++) {
-      transcript += event.results[i][0].transcript + " ";
+      text += event.results[i][0].transcript + " ";
     }
-    transcripts.push(transcript.trim());
+    transcripts.push(text.trim());
     textDiv.innerText = "You said: " + transcripts.join(" ");
   };
 
-  recognition.onerror = () => {
-    alert("Microphone error. Try again.");
-    stopRecognition();
-  };
+  recognition.onerror = () => stopRecognition();
 
   recognition.onend = () => {
     if (recognizing) recognition.start();
@@ -131,9 +107,32 @@ function stopRecognition() {
   }
 }
 
-/* =====================
-   Send to AI + speak
-===================== */
+// ---------- NATURAL TALKING AVATAR ----------
+let mouthTimer = null;
+
+function startAvatarTalking() {
+  stopAvatarTalking();
+
+  mouthTimer = setInterval(() => {
+    const r = Math.random();
+
+    if (r < 0.2) {
+      avatar.src = "images/teacher-mouth1.png"; // pause
+    } else if (r < 0.7) {
+      avatar.src = "images/teacher-mouth2.png"; // normal speech
+    } else {
+      avatar.src = "images/teacher-mouth3.png"; // emphasis
+    }
+
+  }, 120 + Math.random() * 120); // human rhythm
+}
+
+function stopAvatarTalking() {
+  clearInterval(mouthTimer);
+  avatar.src = "images/teacher-mouth1.png";
+}
+
+// ---------- Send to AI ----------
 async function sendToAI() {
   const finalText = transcripts.join(" ").trim();
   if (!finalText) {
@@ -157,21 +156,17 @@ async function sendToAI() {
     utter.rate = 0.9;
     utter.pitch = 1.1;
 
-    utter.onstart = () => startAvatarTalking();
-    utter.onend = () => stopAvatarTalking();
+    utter.onstart = startAvatarTalking;
+    utter.onend = stopAvatarTalking;
 
-    speechSynthesis.cancel();
     speechSynthesis.speak(utter);
 
   } catch (err) {
-    console.error(err);
     textDiv.innerText = "Error contacting AI.";
   }
 }
 
-/* =====================
-   Talk button toggle
-===================== */
+// ---------- Talk Button Toggle ----------
 talkBtn.addEventListener("click", () => {
   if (!recognizing) {
     recognizing = true;
