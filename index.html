@@ -1,73 +1,147 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8" />
-  <title>Talking Avatar</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      background: #f4f6f8;
-      padding: 30px;
-    }
-    img {
-      width: 200px;
-    }
-    button {
-      font-size: 18px;
-      padding: 12px 20px;
-      margin-top: 20px;
-    }
-    #text {
-      margin-top: 20px;
-      font-size: 18px;
-    }
-  </style>
+<meta charset="UTF-8" />
+<title>Talking Avatar</title>
+<style>
+  /* --- Page layout --- */
+  body {
+    font-family: 'Comic Sans MS', Arial, sans-serif;
+    text-align: center;
+    background: #f0f8ff;
+    padding: 40px;
+  }
+
+  h1 {
+    color: #ff6600;
+  }
+
+  #avatar {
+    width: 200px;
+    margin-bottom: 20px;
+  }
+
+  #text {
+    font-size: 18px;
+    margin-top: 20px;
+    min-height: 60px;
+  }
+
+  /* --- 3D button style --- */
+  .btn {
+    font-size: 18px;
+    padding: 15px 25px;
+    margin: 10px;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    color: white;
+    font-weight: bold;
+    box-shadow: 0 5px #999;
+    transition: all 0.1s;
+  }
+
+  .btn:active {
+    box-shadow: 0 2px #666;
+    transform: translateY(3px);
+  }
+
+  /* --- Color scheme --- */
+  #talkBtn.green { background: #4CAF50; }       /* default green */
+  #talkBtn.orange { background: #FF9933; }      /* toggled recording orange */
+
+  #micBtn.green { background: #4CAF50; }        /* mic on/off green default */
+  #micBtn.orange { background: #FF9933; }       /* mic toggled orange */
+
+</style>
 </head>
 <body>
 
-  <h1>Talk to Me</h1>
+<h1>Talk to Me!</h1>
 
-  <!-- Simple Avatar -->
-  <img src="https://i.imgur.com/1X6R7Yx.png" alt="Avatar" />
+<img id="avatar" src="https://i.imgur.com/1X6R7Yx.png" alt="Avatar" />
 
-  <br />
+<div>
+  <button id="talkBtn" class="btn green">🎤 Talk</button>
+  <button id="micBtn" class="btn green">Mic On</button>
+</div>
 
-  <button onclick="startTalking()">🎤 Talk</button>
-
-  <div id="text"></div>
+<div id="text"></div>
 
 <script>
-const workerURL = "https://talking-avatar.bigbrightbean.workers.dev/";
+  // --- Your Cloudflare Worker URL ---
+  const workerURL = "https://talking-avatar.bigbrightbean.workers.dev/";
 
-function startTalking() {
-  const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-  recognition.lang = "en-US";
+  // --- State variables ---
+  let micEnabled = true;
+  let recognition = null;
 
-  recognition.onresult = async function(event) {
-    const studentText = event.results[0][0].transcript;
-    document.getElementById("text").innerText =
-      "You said: " + studentText + "\nThinking...";
+  // --- Text-to-speech ---
+  function speak(text) {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.9; // slightly slower for kids
+    utterance.pitch = 1.1;
+    speechSynthesis.speak(utterance);
+  }
 
-    const response = await fetch(workerURL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: studentText })
-    });
+  // --- Mic On/Off button ---
+  const micBtn = document.getElementById("micBtn");
+  micBtn.addEventListener("click", () => {
+    micEnabled = !micEnabled;
+    micBtn.innerText = micEnabled ? "Mic On" : "Mic Off";
+    micBtn.className = micEnabled ? "btn green" : "btn orange";
+  });
 
-    const data = await response.json();
-    speak(data.reply);
-    document.getElementById("text").innerText =
-      "Avatar says: " + data.reply;
-  };
+  // --- Talk button ---
+  const talkBtn = document.getElementById("talkBtn");
+  talkBtn.addEventListener("click", () => {
+    if (!micEnabled) {
+      alert("Microphone is turned off!");
+      return;
+    }
 
-  recognition.start();
-}
+    // toggle button color to show recording
+    talkBtn.className = "btn orange";
 
-function speak(text) {
-  const utterance = new SpeechSynthesisUtterance(text);
-  speechSynthesis.speak(utterance);
-}
+    // create new SpeechRecognition each time
+    recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang = "en-US";
+
+    recognition.onresult = async function(event) {
+      const studentText = event.results[0][0].transcript;
+      document.getElementById("text").innerText =
+        "You said: " + studentText + "\nThinking...";
+
+      // send to Worker
+      try {
+        const response = await fetch(workerURL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: studentText })
+        });
+
+        const data = await response.json();
+        speak(data.reply);
+        document.getElementById("text").innerText =
+          "Avatar says: " + data.reply;
+
+      } catch (err) {
+        console.error(err);
+        document.getElementById("text").innerText = "Error connecting to AI.";
+      }
+    };
+
+    recognition.onend = () => {
+      talkBtn.className = "btn green"; // reset button color
+    };
+
+    recognition.onerror = () => {
+      talkBtn.className = "btn green";
+      alert("Microphone error. Try again.");
+    };
+
+    recognition.start();
+  });
 </script>
 
 </body>
