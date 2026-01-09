@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Miss Maggie</title>
+<title>Miss Maggie – SH Blending</title>
 
 <style>
 body {
@@ -19,83 +19,77 @@ h1 { color: #ff6600; }
   margin: 20px auto;
 }
 
-button {
+#talkBtn {
   font-size: 20px;
   padding: 18px 30px;
   border: none;
   border-radius: 50px;
   cursor: pointer;
   color: white;
+  background: #4CAF50;
   box-shadow: 0 8px #666;
-  margin: 8px;
 }
-button:active {
+#talkBtn.orange { background: #FF9933; }
+#talkBtn:active {
   box-shadow: 0 4px #444;
   transform: translateY(4px);
 }
 
-#talkBtn { background: #4CAF50; }
-#talkBtn.orange { background: #FF9933; }
-#shBtn { background: #9C27B0; }
-#listenBtn { background: #2196F3; }
-
 #text {
   font-size: 18px;
   margin-top: 20px;
-  min-height: 110px;
+  min-height: 90px;
 }
 </style>
 </head>
 
 <body>
 
-<h1>Miss Maggie</h1>
+<h1>Miss Maggie’s Sound Class</h1>
 
-<img id="avatar" src="images/teacher-mouth1.png">
+<img id="avatar" src="images/teacher-mouth1.png" alt="Miss Maggie">
 
 <br>
 <button id="talkBtn">🎤 Talk</button>
-<button id="shBtn">🟣 SH</button>
-<button id="listenBtn">🔁 Listen again</button>
 
 <div id="text"></div>
 
 <script>
-/* ================= CONFIG ================= */
+/* =========================
+   CONFIG
+========================= */
 const workerURL = "https://talking-avatar.bigbrightbean.workers.dev/";
-const SH_WORDS = ["fish", "shell", "shop"];
 
-/* ================= STATE ================= */
-let inSHLesson = false;
-let lessonQueue = [];
-let lessonIndex = 0;
-let waitingForAnswer = false;
+const TARGETS = ["fish", "shell", "shop"];
+let currentIndex = 0;
+let currentTarget = TARGETS[currentIndex];
 
-let recognizing = false;
-let recognition;
-let transcriptText = "";
-
-/* ================= ELEMENTS ================= */
+/* =========================
+   ELEMENTS
+========================= */
 const avatar = document.getElementById("avatar");
 const talkBtn = document.getElementById("talkBtn");
-const shBtn = document.getElementById("shBtn");
-const listenBtn = document.getElementById("listenBtn");
 const textDiv = document.getElementById("text");
 
 const SpeechRecognition =
   window.SpeechRecognition || window.webkitSpeechRecognition;
 
-/* ================= AVATAR ================= */
+let recognizing = false;
+let recognition;
+let transcriptText = "";
+
+/* =========================
+   AVATAR MOUTH (NATURAL)
+========================= */
 let mouthTimer = null;
 
 function startAvatarTalking() {
   stopAvatarTalking();
   mouthTimer = setInterval(() => {
     const r = Math.random();
-    avatar.src =
-      r < 0.3 ? "images/teacher-mouth1.png" :
-      r < 0.7 ? "images/teacher-mouth2.png" :
-                "images/teacher-mouth3.png";
+    if (r < 0.2) avatar.src = "images/teacher-mouth1.png";
+    else if (r < 0.7) avatar.src = "images/teacher-mouth2.png";
+    else avatar.src = "images/teacher-mouth3.png";
   }, 120 + Math.random() * 120);
 }
 
@@ -104,7 +98,9 @@ function stopAvatarTalking() {
   avatar.src = "images/teacher-mouth1.png";
 }
 
-/* ================= AUDIO ================= */
+/* =========================
+   AUDIO PLAYBACK
+========================= */
 function playAudio(src, onEnd) {
   const audio = new Audio(src);
   startAvatarTalking();
@@ -115,23 +111,22 @@ function playAudio(src, onEnd) {
   audio.play();
 }
 
-/* ================= PHONICS ================= */
-function getPhonemeFile(word) {
-  return word === "fish" ? "audio/phonemes/f_i_sh.m4a" :
-         word === "shell" ? "audio/phonemes/sh_e_ll.m4a" :
-                            "audio/phonemes/sh_o_p.m4a";
+/* =========================
+   QUESTION PROMPT
+========================= */
+function askQuestion() {
+  const soundPrompt =
+    currentTarget === "fish" ? "f / i / sh" :
+    currentTarget === "shell" ? "sh / e / ll" :
+    "sh / o / p";
+
+  textDiv.innerText =
+    `Miss Maggie: Can you blend these sounds… ${soundPrompt}? What word does it make?`;
 }
 
-function playBlendingPrompt() {
-  const word = lessonQueue[lessonIndex];
-  textDiv.innerText = "Miss Maggie: Let’s blend these sounds. Listen carefully!";
-  playAudio(getPhonemeFile(word), () => {
-    textDiv.innerText += "\nWhat word does it make?";
-    waitingForAnswer = true;
-  });
-}
-
-/* ================= RECORDING ================= */
+/* =========================
+   RECORDING
+========================= */
 function startRecognition() {
   recognition = new SpeechRecognition();
   recognition.lang = "en-US";
@@ -157,47 +152,74 @@ function stopRecognition() {
   if (recognition) recognition.stop();
 }
 
-/* ================= CHATGPT ================= */
-async function getMaggieReply(payload) {
-  const res = await fetch(workerURL, {
+/* =========================
+   CHATGPT FEEDBACK
+========================= */
+async function getTeacherReply(payload) {
+  const response = await fetch(workerURL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
-  const data = await res.json();
+
+  const data = await response.json();
   return data.reply;
 }
 
-/* ================= CHECK ANSWER ================= */
+/* =========================
+   CHECK ANSWER
+========================= */
 async function checkAnswer() {
-  if (!inSHLesson || !waitingForAnswer) return;
+  const isCorrect = transcriptText.includes(currentTarget);
 
-  const word = lessonQueue[lessonIndex];
-  const isCorrect = transcriptText.includes(word);
-
-  const reply = await getMaggieReply({
+  const teacherText = await getTeacherReply({
     type: "blending_feedback",
-    target: word,
+    target: currentTarget,
     correct: isCorrect
   });
 
-  textDiv.innerText = "Miss Maggie: " + reply;
+  textDiv.innerText = "Miss Maggie: " + teacherText;
 
-  playAudio(getPhonemeFile(word), () => {
-    playAudio(`audio/words/${word}.m4a`, () => {
-      textDiv.innerText += "\nAre you ready for the next one?";
-      waitingForAnswer = false;
-    });
+  const phonemeFile =
+    currentTarget === "fish" ? "audio/phonemes/f_i_sh.m4a" :
+    currentTarget === "shell" ? "audio/phonemes/sh_e_ll.m4a" :
+    "audio/phonemes/sh_o_p.m4a";
+
+  const wordFile = `audio/words/${currentTarget}.m4a`;
+
+  playAudio(phonemeFile, () => {
+    playAudio(wordFile, nextQuestion);
   });
 }
 
-/* ================= BUTTONS ================= */
-talkBtn.onclick = () => {
+/* =========================
+   NEXT QUESTION / FINISH
+========================= */
+async function nextQuestion() {
+  currentIndex++;
+
+  if (currentIndex < TARGETS.length) {
+    currentTarget = TARGETS[currentIndex];
+    setTimeout(askQuestion, 800);
+  } else {
+    const teacherText = await getTeacherReply({
+      type: "lesson_complete",
+      words: TARGETS
+    });
+    textDiv.innerText = "Miss Maggie: " + teacherText;
+  }
+}
+
+/* =========================
+   TALK BUTTON
+========================= */
+talkBtn.addEventListener("click", () => {
   if (!recognizing) {
     recognizing = true;
     transcriptText = "";
     talkBtn.classList.add("orange");
     talkBtn.innerText = "🎤 Listening...";
+    askQuestion();
     startRecognition();
   } else {
     recognizing = false;
@@ -206,39 +228,12 @@ talkBtn.onclick = () => {
     stopRecognition();
     checkAnswer();
   }
-};
+});
 
-shBtn.onclick = async () => {
-  if (!inSHLesson) {
-    inSHLesson = true;
-    lessonQueue = [...SH_WORDS].sort(() => Math.random() - 0.5);
-    lessonIndex = 0;
-    playBlendingPrompt();
-    return;
-  }
-
-  if (!waitingForAnswer) {
-    lessonIndex++;
-    if (lessonIndex < lessonQueue.length) {
-      playBlendingPrompt();
-    } else {
-      const reply = await getMaggieReply({
-        type: "lesson_complete",
-        words: lessonQueue
-      });
-      textDiv.innerText = "Miss Maggie: " + reply;
-      inSHLesson = false;
-    }
-  }
-};
-
-listenBtn.onclick = () => {
-  if (inSHLesson) playBlendingPrompt();
-};
-
-/* ================= START ================= */
-textDiv.innerText =
-  "Miss Maggie: Hello! Talk to me, or press the SH button to start blending!";
+/* =========================
+   START
+========================= */
+askQuestion();
 </script>
 
 </body>
