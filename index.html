@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Miss Maggie – SH Blending</title>
+<title>Miss Maggie</title>
 
 <style>
 body {
@@ -38,49 +38,41 @@ h1 { color: #ff6600; }
 #text {
   font-size: 18px;
   margin-top: 20px;
-  min-height: 90px;
+  min-height: 100px;
 }
 </style>
 </head>
 
 <body>
 
-<h1>Miss Maggie’s Sound Class</h1>
-
-<img id="avatar" src="images/teacher-mouth1.png" alt="Miss Maggie">
-
+<h1>Miss Maggie</h1>
+<img id="avatar" src="images/teacher-mouth1.png">
 <br>
 <button id="talkBtn">🎤 Talk</button>
-
 <div id="text"></div>
 
 <script>
-/* =========================
-   CONFIG
-========================= */
+/* ================= CONFIG ================= */
 const workerURL = "https://talking-avatar.bigbrightbean.workers.dev/";
-
 const TARGETS = ["fish", "shell", "shop"];
+
+/* ================= STATE ================= */
+let mode = "chat"; // chat | lesson
 let currentIndex = 0;
-let currentTarget = TARGETS[currentIndex];
-
-/* =========================
-   ELEMENTS
-========================= */
-const avatar = document.getElementById("avatar");
-const talkBtn = document.getElementById("talkBtn");
-const textDiv = document.getElementById("text");
-
-const SpeechRecognition =
-  window.SpeechRecognition || window.webkitSpeechRecognition;
+let currentTarget = TARGETS[0];
 
 let recognizing = false;
 let recognition;
 let transcriptText = "";
 
-/* =========================
-   AVATAR MOUTH (NATURAL)
-========================= */
+/* ================= ELEMENTS ================= */
+const avatar = document.getElementById("avatar");
+const talkBtn = document.getElementById("talkBtn");
+const textDiv = document.getElementById("text");
+const SpeechRecognition =
+  window.SpeechRecognition || window.webkitSpeechRecognition;
+
+/* ================= AVATAR MOUTH ================= */
 let mouthTimer = null;
 
 function startAvatarTalking() {
@@ -98,9 +90,7 @@ function stopAvatarTalking() {
   avatar.src = "images/teacher-mouth1.png";
 }
 
-/* =========================
-   AUDIO PLAYBACK
-========================= */
+/* ================= AUDIO ================= */
 function playAudio(src, onEnd) {
   const audio = new Audio(src);
   startAvatarTalking();
@@ -111,22 +101,18 @@ function playAudio(src, onEnd) {
   audio.play();
 }
 
-/* =========================
-   QUESTION PROMPT
-========================= */
+/* ================= LESSON PROMPT ================= */
 function askQuestion() {
-  const soundPrompt =
+  const prompt =
     currentTarget === "fish" ? "f / i / sh" :
     currentTarget === "shell" ? "sh / e / ll" :
     "sh / o / p";
 
   textDiv.innerText =
-    `Miss Maggie: Can you blend these sounds… ${soundPrompt}? What word does it make?`;
+    `Miss Maggie: Can you blend these sounds… ${prompt}? What word does it make?`;
 }
 
-/* =========================
-   RECORDING
-========================= */
+/* ================= RECORDING ================= */
 function startRecognition() {
   recognition = new SpeechRecognition();
   recognition.lang = "en-US";
@@ -152,33 +138,63 @@ function stopRecognition() {
   if (recognition) recognition.stop();
 }
 
-/* =========================
-   CHATGPT FEEDBACK
-========================= */
-async function getTeacherReply(payload) {
-  const response = await fetch(workerURL, {
+/* ================= CHATGPT ================= */
+async function getMaggieReply(payload) {
+  const res = await fetch(workerURL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
-
-  const data = await response.json();
+  const data = await res.json();
   return data.reply;
 }
 
-/* =========================
-   CHECK ANSWER
-========================= */
+/* ================= TRIGGER ================= */
+function isLessonTrigger(text) {
+  return text.includes("start") &&
+         text.includes("sh") &&
+         text.includes("blending");
+}
+
+/* ================= FINAL TRANSCRIPT ================= */
+async function handleFinalTranscript() {
+  const t = transcriptText;
+
+  /* ---- CHAT MODE ---- */
+  if (mode === "chat") {
+    if (isLessonTrigger(t)) {
+      mode = "lesson";
+      currentIndex = 0;
+      currentTarget = TARGETS[0];
+      textDiv.innerText = "Miss Maggie: Yay! Let’s start our sh blending lesson!";
+      setTimeout(askQuestion, 800);
+      return;
+    }
+
+    const reply = await getMaggieReply({
+      type: "free_chat",
+      message: t
+    });
+
+    textDiv.innerText = "Miss Maggie: " + reply;
+    return;
+  }
+
+  /* ---- LESSON MODE ---- */
+  checkAnswer();
+}
+
+/* ================= CHECK ANSWER ================= */
 async function checkAnswer() {
   const isCorrect = transcriptText.includes(currentTarget);
 
-  const teacherText = await getTeacherReply({
+  const reply = await getMaggieReply({
     type: "blending_feedback",
     target: currentTarget,
     correct: isCorrect
   });
 
-  textDiv.innerText = "Miss Maggie: " + teacherText;
+  textDiv.innerText = "Miss Maggie: " + reply;
 
   const phonemeFile =
     currentTarget === "fish" ? "audio/phonemes/f_i_sh.m4a" :
@@ -192,9 +208,7 @@ async function checkAnswer() {
   });
 }
 
-/* =========================
-   NEXT QUESTION / FINISH
-========================= */
+/* ================= NEXT QUESTION ================= */
 async function nextQuestion() {
   currentIndex++;
 
@@ -202,38 +216,35 @@ async function nextQuestion() {
     currentTarget = TARGETS[currentIndex];
     setTimeout(askQuestion, 800);
   } else {
-    const teacherText = await getTeacherReply({
+    const reply = await getMaggieReply({
       type: "lesson_complete",
       words: TARGETS
     });
-    textDiv.innerText = "Miss Maggie: " + teacherText;
+    textDiv.innerText = "Miss Maggie: " + reply;
+    mode = "chat"; // return to free chat
   }
 }
 
-/* =========================
-   TALK BUTTON
-========================= */
-talkBtn.addEventListener("click", () => {
+/* ================= TALK BUTTON ================= */
+talkBtn.onclick = () => {
   if (!recognizing) {
     recognizing = true;
     transcriptText = "";
     talkBtn.classList.add("orange");
     talkBtn.innerText = "🎤 Listening...";
-    askQuestion();
     startRecognition();
   } else {
     recognizing = false;
     talkBtn.classList.remove("orange");
     talkBtn.innerText = "🎤 Talk";
     stopRecognition();
-    checkAnswer();
+    handleFinalTranscript();
   }
-});
+};
 
-/* =========================
-   START
-========================= */
-askQuestion();
+/* ================= START ================= */
+textDiv.innerText =
+  "Miss Maggie: Hello! You can talk to me about anything, or say “start sh blending”!";
 </script>
 
 </body>
