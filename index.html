@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Talking Avatar</title>
+<title>Miss Maggie – SH Blending</title>
 
 <style>
 body {
@@ -12,86 +12,134 @@ body {
   padding: 40px;
 }
 
-h1 {
-  color: #ff6600;
-  margin-bottom: 30px;
-}
+h1 { color: #ff6600; }
 
 #avatar {
   width: 220px;
-  margin-bottom: 20px;
-}
-
-#text {
-  font-size: 18px;
-  margin-top: 20px;
-  min-height: 60px;
+  margin: 20px auto;
 }
 
 #talkBtn {
   font-size: 20px;
-  padding: 20px 30px;
+  padding: 18px 30px;
   border: none;
   border-radius: 50px;
   cursor: pointer;
   color: white;
   background: #4CAF50;
   box-shadow: 0 8px #666;
-  transition: all 0.15s;
 }
-
+#talkBtn.orange { background: #FF9933; }
 #talkBtn:active {
   box-shadow: 0 4px #444;
   transform: translateY(4px);
 }
 
-#talkBtn.orange {
-  background: #FF9933;
+#text {
+  font-size: 18px;
+  margin-top: 20px;
+  min-height: 90px;
 }
 </style>
 </head>
 
 <body>
 
-<h1>Talk to Me!</h1>
+<h1>Miss Maggie’s Sound Class</h1>
 
-<img id="avatar" src="images/teacher-mouth1.png" alt="Avatar">
+<img id="avatar" src="images/teacher-mouth1.png" alt="Miss Maggie">
 
 <br>
-
 <button id="talkBtn">🎤 Talk</button>
 
 <div id="text"></div>
 
 <script>
+/* =========================
+   CONFIG
+========================= */
 const workerURL = "https://talking-avatar.bigbrightbean.workers.dev/";
+
+const TARGETS = ["fish", "shell", "shop"];
+let currentIndex = 0;
+let currentTarget = TARGETS[currentIndex];
+
+/* =========================
+   ELEMENTS
+========================= */
+const avatar = document.getElementById("avatar");
 const talkBtn = document.getElementById("talkBtn");
 const textDiv = document.getElementById("text");
-const avatar = document.getElementById("avatar");
+
+const SpeechRecognition =
+  window.SpeechRecognition || window.webkitSpeechRecognition;
 
 let recognizing = false;
-let transcripts = [];
 let recognition;
+let transcriptText = "";
 
-// ---------- Speech Recognition ----------
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+/* =========================
+   AVATAR MOUTH (NATURAL)
+========================= */
+let mouthTimer = null;
 
-function startRecognitionBatch() {
+function startAvatarTalking() {
+  stopAvatarTalking();
+  mouthTimer = setInterval(() => {
+    const r = Math.random();
+    if (r < 0.2) avatar.src = "images/teacher-mouth1.png";
+    else if (r < 0.7) avatar.src = "images/teacher-mouth2.png";
+    else avatar.src = "images/teacher-mouth3.png";
+  }, 120 + Math.random() * 120);
+}
+
+function stopAvatarTalking() {
+  clearInterval(mouthTimer);
+  avatar.src = "images/teacher-mouth1.png";
+}
+
+/* =========================
+   AUDIO PLAYBACK
+========================= */
+function playAudio(src, onEnd) {
+  const audio = new Audio(src);
+  startAvatarTalking();
+  audio.onended = () => {
+    stopAvatarTalking();
+    if (onEnd) onEnd();
+  };
+  audio.play();
+}
+
+/* =========================
+   QUESTION PROMPT
+========================= */
+function askQuestion() {
+  const soundPrompt =
+    currentTarget === "fish" ? "f / i / sh" :
+    currentTarget === "shell" ? "sh / e / ll" :
+    "sh / o / p";
+
+  textDiv.innerText =
+    `Miss Maggie: Can you blend these sounds… ${soundPrompt}? What word does it make?`;
+}
+
+/* =========================
+   RECORDING
+========================= */
+function startRecognition() {
   recognition = new SpeechRecognition();
   recognition.lang = "en-US";
   recognition.continuous = true;
-  recognition.interimResults = false;
 
-  recognition.onresult = event => {
-    let text = "";
-    for (let i = 0; i < event.results.length; i++) {
-      text += event.results[i][0].transcript + " ";
+  recognition.onresult = e => {
+    transcriptText = "";
+    for (let i = 0; i < e.results.length; i++) {
+      transcriptText += e.results[i][0].transcript + " ";
     }
-    transcripts.push(text.trim());
-    textDiv.innerText = "You said: " + transcripts.join(" ");
+    transcriptText = transcriptText.toLowerCase();
+    textDiv.innerText = "You said: " + transcriptText;
   };
-
-  recognition.onerror = () => stopRecognition();
 
   recognition.onend = () => {
     if (recognizing) recognition.start();
@@ -101,87 +149,91 @@ function startRecognitionBatch() {
 }
 
 function stopRecognition() {
-  if (recognition) {
-    recognition.stop();
-    recognition = null;
-  }
+  if (recognition) recognition.stop();
 }
 
-// ---------- NATURAL TALKING AVATAR ----------
-let mouthTimer = null;
+/* =========================
+   CHATGPT FEEDBACK
+========================= */
+async function getTeacherReply(payload) {
+  const response = await fetch(workerURL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
 
-function startAvatarTalking() {
-  stopAvatarTalking();
-
-  mouthTimer = setInterval(() => {
-    const r = Math.random();
-
-    if (r < 0.2) {
-      avatar.src = "images/teacher-mouth1.png"; // pause
-    } else if (r < 0.7) {
-      avatar.src = "images/teacher-mouth2.png"; // normal speech
-    } else {
-      avatar.src = "images/teacher-mouth3.png"; // emphasis
-    }
-
-  }, 120 + Math.random() * 120); // human rhythm
+  const data = await response.json();
+  return data.reply;
 }
 
-function stopAvatarTalking() {
-  clearInterval(mouthTimer);
-  avatar.src = "images/teacher-mouth1.png";
+/* =========================
+   CHECK ANSWER
+========================= */
+async function checkAnswer() {
+  const isCorrect = transcriptText.includes(currentTarget);
+
+  const teacherText = await getTeacherReply({
+    type: "blending_feedback",
+    target: currentTarget,
+    correct: isCorrect
+  });
+
+  textDiv.innerText = "Miss Maggie: " + teacherText;
+
+  const phonemeFile =
+    currentTarget === "fish" ? "audio/phonemes/f_i_sh.m4a" :
+    currentTarget === "shell" ? "audio/phonemes/sh_e_ll.m4a" :
+    "audio/phonemes/sh_o_p.m4a";
+
+  const wordFile = `audio/words/${currentTarget}.m4a`;
+
+  playAudio(phonemeFile, () => {
+    playAudio(wordFile, nextQuestion);
+  });
 }
 
-// ---------- Send to AI ----------
-async function sendToAI() {
-  const finalText = transcripts.join(" ").trim();
-  if (!finalText) {
-    textDiv.innerText = "No speech detected.";
-    return;
-  }
+/* =========================
+   NEXT QUESTION / FINISH
+========================= */
+async function nextQuestion() {
+  currentIndex++;
 
-  textDiv.innerText = "Thinking...";
-
-  try {
-    const resp = await fetch(workerURL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: finalText })
+  if (currentIndex < TARGETS.length) {
+    currentTarget = TARGETS[currentIndex];
+    setTimeout(askQuestion, 800);
+  } else {
+    const teacherText = await getTeacherReply({
+      type: "lesson_complete",
+      words: TARGETS
     });
-
-    const data = await resp.json();
-    textDiv.innerText = "Avatar says: " + data.reply;
-
-    const utter = new SpeechSynthesisUtterance(data.reply);
-    utter.rate = 0.9;
-    utter.pitch = 1.1;
-
-    utter.onstart = startAvatarTalking;
-    utter.onend = stopAvatarTalking;
-
-    speechSynthesis.speak(utter);
-
-  } catch (err) {
-    textDiv.innerText = "Error contacting AI.";
+    textDiv.innerText = "Miss Maggie: " + teacherText;
   }
 }
 
-// ---------- Talk Button Toggle ----------
+/* =========================
+   TALK BUTTON
+========================= */
 talkBtn.addEventListener("click", () => {
   if (!recognizing) {
     recognizing = true;
-    transcripts = [];
+    transcriptText = "";
     talkBtn.classList.add("orange");
     talkBtn.innerText = "🎤 Listening...";
-    startRecognitionBatch();
+    askQuestion();
+    startRecognition();
   } else {
     recognizing = false;
     talkBtn.classList.remove("orange");
     talkBtn.innerText = "🎤 Talk";
     stopRecognition();
-    sendToAI();
+    checkAnswer();
   }
 });
+
+/* =========================
+   START
+========================= */
+askQuestion();
 </script>
 
 </body>
