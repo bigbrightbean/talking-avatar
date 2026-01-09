@@ -121,7 +121,7 @@ function askQuestion() {
     "sh / o / p";
 
   textDiv.innerText =
-    `Miss Maggie: Can you blend these sounds… ${soundPrompt}? What word does it make?`;
+    Miss Maggie: Can you blend these sounds… ${soundPrompt}? What word does it make?;
 }
 
 /* =========================
@@ -185,7 +185,7 @@ async function checkAnswer() {
     currentTarget === "shell" ? "audio/phonemes/sh_e_ll.m4a" :
     "audio/phonemes/sh_o_p.m4a";
 
-  const wordFile = `audio/words/${currentTarget}.m4a`;
+  const wordFile = audio/words/${currentTarget}.m4a;
 
   playAudio(phonemeFile, () => {
     playAudio(wordFile, nextQuestion);
