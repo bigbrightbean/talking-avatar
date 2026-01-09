@@ -25,28 +25,29 @@ h1 {
 #text {
   font-size: 18px;
   margin-top: 20px;
-  min-height: 60px;
+  min-height: 80px;
 }
 
-#talkBtn {
+#talkBtn, #btn1 {
   font-size: 20px;
   padding: 20px 30px;
   border: none;
   border-radius: 50px;
   cursor: pointer;
   color: white;
-  background: #4CAF50;
+  background: #4CAF50; /* default green */
   box-shadow: 0 8px #666;
   transition: all 0.15s;
+  margin: 8px;
 }
 
-#talkBtn:active {
+#talkBtn:active, #btn1:active {
   box-shadow: 0 4px #444;
   transform: translateY(4px);
 }
 
-#talkBtn.orange {
-  background: #FF9933;
+.orange {
+  background: #FF9933 !important; /* toggled on */
 }
 </style>
 </head>
@@ -60,12 +61,30 @@ h1 {
 <br>
 
 <button id="talkBtn">🎤 Talk</button>
+<br>
+<button id="btn1">1️⃣ Fish</button>
 
 <div id="text"></div>
 
 <script>
+/* ======================
+   CONFIG
+====================== */
 const workerURL = "https://talking-avatar.bigbrightbean.workers.dev/";
+
+// CHANGE THESE IF YOUR PATHS ARE DIFFERENT:
+const PHONEMES_FISH = [
+  "audio/phonemes/f.m4a",
+  "audio/phonemes/i.m4a",
+  "audio/phonemes/sh.m4a"
+];
+const WORD_FISH = "audio/words/fish.m4a";
+
+/* ======================
+   ELEMENTS + STATE
+====================== */
 const talkBtn = document.getElementById("talkBtn");
+const btn1 = document.getElementById("btn1");
 const textDiv = document.getElementById("text");
 const avatar = document.getElementById("avatar");
 
@@ -73,7 +92,16 @@ let recognizing = false;
 let transcripts = [];
 let recognition;
 
-// ---------- Speech Recognition ----------
+// Lesson state
+let lessonActive = false;          // button 1 lesson running/armed
+let waitingForFishAnswer = false;  // expecting student to say "fish"
+
+// Prevent overlapping audio
+let busySpeakingOrAudio = false;
+
+/* ======================
+   SPEECH RECOGNITION
+====================== */
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 function startRecognitionBatch() {
@@ -107,24 +135,19 @@ function stopRecognition() {
   }
 }
 
-// ---------- NATURAL TALKING AVATAR ----------
+/* ======================
+   AVATAR MOUTH ANIMATION
+====================== */
 let mouthTimer = null;
 
 function startAvatarTalking() {
   stopAvatarTalking();
-
   mouthTimer = setInterval(() => {
     const r = Math.random();
-
-    if (r < 0.2) {
-      avatar.src = "images/teacher-mouth1.png"; // pause
-    } else if (r < 0.7) {
-      avatar.src = "images/teacher-mouth2.png"; // normal speech
-    } else {
-      avatar.src = "images/teacher-mouth3.png"; // emphasis
-    }
-
-  }, 120 + Math.random() * 120); // human rhythm
+    if (r < 0.2) avatar.src = "images/teacher-mouth1.png";
+    else if (r < 0.7) avatar.src = "images/teacher-mouth2.png";
+    else avatar.src = "images/teacher-mouth3.png";
+  }, 120 + Math.random() * 120);
 }
 
 function stopAvatarTalking() {
@@ -132,41 +155,102 @@ function stopAvatarTalking() {
   avatar.src = "images/teacher-mouth1.png";
 }
 
-// ---------- Send to AI ----------
-async function sendToAI() {
-  const finalText = transcripts.join(" ").trim();
-  if (!finalText) {
-    textDiv.innerText = "No speech detected.";
-    return;
-  }
-
-  textDiv.innerText = "Thinking...";
-
-  try {
-    const resp = await fetch(workerURL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: finalText })
-    });
-
-    const data = await resp.json();
-    textDiv.innerText = "Avatar says: " + data.reply;
-
-    const utter = new SpeechSynthesisUtterance(data.reply);
+/* ======================
+   AUDIO QUEUE (TTS + FILES)
+   Ensures you HEAR:
+   - Maggie speaking (TTS)
+   - then your sound files (m4a)
+====================== */
+function speakTTS(text) {
+  return new Promise(resolve => {
+    const utter = new SpeechSynthesisUtterance(text);
     utter.rate = 0.9;
     utter.pitch = 1.1;
 
-    utter.onstart = startAvatarTalking;
-    utter.onend = stopAvatarTalking;
+    utter.onstart = () => startAvatarTalking();
+    utter.onend = () => { stopAvatarTalking(); resolve(); };
+    utter.onerror = () => { stopAvatarTalking(); resolve(); };
 
     speechSynthesis.speak(utter);
-
-  } catch (err) {
-    textDiv.innerText = "Error contacting AI.";
-  }
+  });
 }
 
-// ---------- Talk Button Toggle ----------
+function playFile(src) {
+  return new Promise(resolve => {
+    const audio = new Audio(src);
+    startAvatarTalking();
+    audio.onended = () => { stopAvatarTalking(); resolve(); };
+    audio.onerror = () => { stopAvatarTalking(); resolve(); };
+    audio.play().catch(() => { stopAvatarTalking(); resolve(); });
+  });
+}
+
+// Runs tasks sequentially so sounds never overlap
+async function runQueue(tasks) {
+  if (busySpeakingOrAudio) return;
+  busySpeakingOrAudio = true;
+
+  // Stop any current browser TTS (prevents overlap)
+  try { speechSynthesis.cancel(); } catch(e) {}
+
+  for (const task of tasks) {
+    if (task.type === "tts") {
+      await speakTTS(task.text);
+    } else if (task.type === "file") {
+      await playFile(task.src);
+    }
+  }
+
+  busySpeakingOrAudio = false;
+}
+
+/* ======================
+   SEND TO AI (Worker)
+====================== */
+async function callAI(text) {
+  const resp = await fetch(workerURL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text })
+  });
+  const data = await resp.json();
+  return data.reply || "";
+}
+
+/* ======================
+   BUTTON 1: START FISH LESSON
+====================== */
+btn1.addEventListener("click", async () => {
+  // You can press anytime to repeat the same flow
+  lessonActive = true;
+  waitingForFishAnswer = true;
+  transcripts = [];
+
+  btn1.classList.add("orange");
+
+  const openingLines = [
+    "Ooo! A secret sound mission! Let’s do some blending!",
+    "Hi superstar! Ready for a quick sound puzzle?",
+    "Okay! Teacher ears on! Let’s blend some sounds together!"
+  ];
+  const opening = openingLines[Math.floor(Math.random() * openingLines.length)];
+
+  textDiv.innerText = "Miss Maggie: " + opening + "\nCan you blend these sounds?";
+
+  await runQueue([
+    { type: "tts", text: `${opening} Can you blend these sounds?` },
+    { type: "file", src: PHONEMES_FISH[0] },
+    { type: "file", src: PHONEMES_FISH[1] },
+    { type: "file", src: PHONEMES_FISH[2] },
+    { type: "tts", text: "What word does it make? Press Talk and tell me!" }
+  ]);
+
+  // Keep lesson active; student now uses Talk button to answer
+});
+
+/* ======================
+   TALK BUTTON TOGGLE
+====================== */
 talkBtn.addEventListener("click", () => {
   if (!recognizing) {
     recognizing = true;
@@ -179,9 +263,83 @@ talkBtn.addEventListener("click", () => {
     talkBtn.classList.remove("orange");
     talkBtn.innerText = "🎤 Talk";
     stopRecognition();
-    sendToAI();
+    onStudentFinishedSpeaking();
   }
 });
+
+/* ======================
+   WHEN STUDENT FINISHES SPEAKING
+====================== */
+async function onStudentFinishedSpeaking() {
+  const finalText = transcripts.join(" ").trim().toLowerCase();
+
+  if (!finalText) {
+    textDiv.innerText = "No speech detected.";
+    return;
+  }
+
+  // If lesson is active and we are waiting for "fish"
+  if (lessonActive && waitingForFishAnswer) {
+    const isCorrect = finalText.includes("fish");
+
+    // Build a strong instruction for your existing Worker (since it only accepts {text})
+    const promptToAI = `
+You are Miss Maggie, a warm playful kindergarten phonics teacher.
+Rules:
+- You do NOT judge pronunciation accuracy; only react to the correctness flag I provide.
+- Never say "wrong". Be kind, funny, and encouraging.
+- Reply in 1 to 4 sentences max.
+
+Target word: fish
+Student said: "${finalText}"
+Correct flag: ${isCorrect ? "correct" : "not correct yet"}
+
+If correct:
+- Celebrate warmly, playful.
+If not correct yet:
+- Encourage listening again and trying once more.
+`;
+
+    textDiv.innerText = "Thinking...";
+
+    let reply = "Let’s try again together!";
+    try {
+      reply = await callAI(promptToAI);
+    } catch(e) {}
+
+    // Speak Maggie + play phonemes + play word
+    textDiv.innerText = "Miss Maggie: " + reply;
+
+    await runQueue([
+      { type: "tts", text: reply },
+      { type: "file", src: PHONEMES_FISH[0] },
+      { type: "file", src: PHONEMES_FISH[1] },
+      { type: "file", src: PHONEMES_FISH[2] },
+      { type: "file", src: WORD_FISH }
+    ]);
+
+    // End this attempt; allow pressing button 1 anytime to repeat
+    waitingForFishAnswer = false;
+    btn1.classList.remove("orange");
+    lessonActive = false;
+    return;
+  }
+
+  // Otherwise normal free chat (your original behavior)
+  textDiv.innerText = "Thinking...";
+
+  try {
+    const reply = await callAI(finalText);
+    textDiv.innerText = "Avatar says: " + reply;
+
+    await runQueue([
+      { type: "tts", text: reply }
+    ]);
+
+  } catch (err) {
+    textDiv.innerText = "Error contacting AI.";
+  }
+}
 </script>
 
 </body>
